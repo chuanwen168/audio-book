@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>有声书管理后台</title>
+    <style>
+        * {box-sizing: border-box;margin:0;padding:0;font-family:system-ui}
+        body {max-width:1200px;margin:24px auto;padding:0 16px}
+        h1 {margin-bottom:20px}
+        .album-card {display:flex;gap:16px;border:1px solid #ddd;padding:16px;border-radius:8px;margin-bottom:16px;align-items:center}
+        .cover {width:100px;height:100px;object-fit:cover;border-radius:4px}
+        .info {flex:1}
+        .title {font-size:18px;font-weight:bold;margin-bottom:6px}
+        .folder {color:#666;font-size:13px;margin-bottom:10px}
+        .btn {padding:6px 12px;border:none;border-radius:4px;cursor:pointer;margin-right:8px}
+        .btn-detail {background:#10b981;color:#fff}
+        .btn-edit {background:#2563eb;color:#fff}
+        .mask {position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:999}
+        .modal {background:#fff;width:620px;padding:22px;border-radius:8px;max-height:85vh;overflow-y:auto}
+        .modal h3 {margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid #eee}
+        .close {float:right;color:#999;cursor:pointer;font-size:22px;margin-top:-22px}
+        .form-item {margin-bottom:14px}
+        label {display:block;margin-bottom:5px;font-size:14px}
+        input, textarea {width:100%;padding:8px;border:1px solid #ccc;border-radius:4px}
+        textarea {min-height:80px}
+        .audio-item {padding:7px 0;border-bottom:1px solid #f1f1f1}
+        .modal-footer {margin-top:18px;text-align:right}
+        .save-btn {background:#2563eb;color:#fff;border:none;padding:7px 16px;border-radius:4px;cursor:pointer}
+        .pager {display:flex;align-items:center;gap:8px;margin:18px 0;flex-wrap:wrap}
+        .page-info {font-size:14px;color:#666;margin-right:8px}
+        .page-btn {padding:6px 12px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:14px}
+        .page-btn:hover:not(:disabled) {border-color:#2563eb;color:#2563eb}
+        .page-btn.active {background:#2563eb;color:#fff;border-color:#2563eb}
+        .page-btn:disabled {color:#bbb;cursor:not-allowed}
+        .page-ellipsis {padding:6px 4px;color:#999}
+    </style>
+</head>
+<body>
+<h1>有声书管理后台</h1>
+<hr style="margin:16px 0">
+<div id="wrap"></div>
+<div id="pager" class="pager"></div>
+
+<!-- 编辑弹窗（仅保留编辑弹窗，删除分集弹窗maskDetail） -->
+<div class="mask" id="maskEdit">
+    <div class="modal">
+        <span class="close" onclick="closeMask('maskEdit')">&times;</span>
+        <h3>编辑书籍信息 & 更换封面</h3>
+        <div class="form-item">
+            <label>上传封面图片(jpg)</label>
+            <input type="file" id="upImg" accept="image/jpeg">
+            <button class="save-btn" style="margin-top:6px" onclick="uploadCover()">上传替换封面</button>
+        </div>
+        <div class="form-item">
+            <label>书籍标题</label>
+            <input type="text" id="edit_title">
+        </div>
+        <div class="form-item">
+            <label>作者</label>
+            <input type="text" id="edit_author">
+        </div>
+        <div class="form-item">
+            <label>演播者</label>
+            <input type="text" id="edit_narrator">
+        </div>
+        <div class="form-item">
+            <label>分类</label>
+            <input type="text" id="edit_category">
+        </div>
+        <div class="form-item">
+            <label>出版年份</label>
+            <input type="text" id="edit_year">
+        </div>
+        <div class="form-item">
+            <label>书籍介绍</label>
+            <textarea id="edit_desc"></textarea>
+        </div>
+        <div class="modal-footer">
+            <button class="save-btn" onclick="saveAllNfo()">保存全部资料</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const baseUrl = "";
+let currentFolder = "";
+let currentPage = 1;
+const pageSize = 12;
+let totalAlbums = 0;
+function closeMask(id) {
+    document.getElementById(id).style.display = "none";
+}
+async function loadList(page = 1) {
+    try {
+        const res = await fetch(`${baseUrl}/api/v1/albums?page=${page}&page_size=${pageSize}`);
+        if (!res.ok) throw new Error("接口异常");
+        const json = await res.json();
+        const raw = json.data;
+        const isPaged = raw && typeof raw === "object" && !Array.isArray(raw) && typeof raw.total === "number";
+        const items = isPaged ? (raw.items || []) : (raw || []);
+        totalAlbums = isPaged ? raw.total : items.length;
+        const totalPages = isPaged ? Math.max(1, Math.ceil(totalAlbums / pageSize)) : 1;
+        if (page > totalPages) {
+            currentPage = totalPages;
+            return loadList(totalPages);
+        }
+        currentPage = page;
+        const wrap = document.getElementById("wrap");
+        wrap.innerHTML = "";
+        items.forEach(item => {
+            const div = document.createElement("div");
+            div.className = "album-card";
+            div.innerHTML = `
+                <img class="cover" src="${item.nfo.cover}" alt="封面">
+                <div class="info">
+                    <div class="title">${item.nfo.title}</div>
+                    <div class="folder">文件夹名称：${item.folder_name}</div>
+                    <button class="btn btn-detail" onclick="openDetail('${item.folder_name}')">查看分集</button>
+                    <button class="btn btn-edit" onclick="openEdit('${item.folder_name}')">编辑资料</button>
+                </div>
+            `;
+            wrap.appendChild(div);
+        });
+        renderPager(totalPages);
+    } catch (err) {
+        alert("加载列表失败，检查服务是否启动");
+        console.error(err);
+    }
+}
+function renderPager(totalPages) {
+    const pager = document.getElementById("pager");
+    pager.innerHTML = "";
+    const info = document.createElement("span");
+    info.className = "page-info";
+    info.textContent = `共 ${totalAlbums} 本 · 第 ${currentPage}/${totalPages} 页`;
+    pager.appendChild(info);
+
+    const btnPrev = document.createElement("button");
+    btnPrev.className = "page-btn";
+    btnPrev.textContent = "上一页";
+    btnPrev.disabled = currentPage <= 1;
+    btnPrev.onclick = () => loadList(currentPage - 1);
+    pager.appendChild(btnPrev);
+
+    pageWindow(currentPage, totalPages).forEach(p => {
+        if (p === "…") {
+            const s = document.createElement("span");
+            s.className = "page-ellipsis";
+            s.textContent = "…";
+            pager.appendChild(s);
+            return;
+        }
+        const b = document.createElement("button");
+        b.className = "page-btn" + (p === currentPage ? " active" : "");
+        b.textContent = p;
+        b.onclick = () => loadList(p);
+        pager.appendChild(b);
+    });
+
+    const btnNext = document.createElement("button");
+    btnNext.className = "page-btn";
+    btnNext.textContent = "下一页";
+    btnNext.disabled = currentPage >= totalPages;
+    btnNext.onclick = () => loadList(currentPage + 1);
+    pager.appendChild(btnNext);
+}
+function pageWindow(cur, total) {
+    if (total <= 7) {
+        const arr = [];
+        for (let i = 1; i <= total; i++) arr.push(i);
+        return arr;
+    }
+    const pages = [];
+    const push = v => { if (pages[pages.length - 1] !== v) pages.push(v); };
+    push(1);
+    if (cur > 3) pages.push("…");
+    for (let i = Math.max(2, cur - 1); i <= Math.min(total - 1, cur + 1); i++) push(i);
+    if (cur < total - 2) pages.push("…");
+    push(total);
+    return pages;
+}
+// 修改：新开标签跳转detail.html
+function openDetail(folder) {
+    window.open(`detail.html?folder=${encodeURIComponent(folder)}`, '_blank');
+}
+// 修复：读取完整nfo，解决打开编辑面板失败
+async function openEdit(folder) {
+    currentFolder = folder;
+    try {
+        // 1. 获取基础专辑信息
+        const res = await fetch(`${baseUrl}/api/v1/album/${folder}`);
+        if (!res.ok) throw new Error("获取专辑基础数据失败");
+        const json = await res.json();
+        const albumInfo = json.data;
+        // 先填充基础标题简介
+        document.getElementById("edit_title").value = albumInfo.nfo.title || "";
+        document.getElementById("edit_desc").value = albumInfo.nfo.desc || "";
+        // 清空其他字段
+        document.getElementById("edit_author").value = "";
+        document.getElementById("edit_narrator").value = "";
+        document.getElementById("edit_category").value = "";
+        document.getElementById("edit_year").value = "";
+
+        // 2. 单独请求完整nfo原始数据
+        const nfoRes = await fetch(`${baseUrl}/api/v1/album_nfo/${folder}`);
+        const nfoJson = await nfoRes.json();
+        if(nfoJson.code === 200){
+            const fullNfo = nfoJson.data;
+            document.getElementById("edit_title").value = fullNfo.title || "";
+            document.getElementById("edit_author").value = fullNfo.author || "";
+            document.getElementById("edit_narrator").value = fullNfo.narrator || "";
+            document.getElementById("edit_category").value = fullNfo.category || "";
+            document.getElementById("edit_year").value = fullNfo.year || "";
+            document.getElementById("edit_desc").value = fullNfo.description || "";
+        }
+        document.getElementById("maskEdit").style.display = "flex";
+    } catch (err) {
+        alert("打开编辑面板失败：" + err.message);
+        console.error(err);
+    }
+}
+async function uploadCover() {
+    const file = document.getElementById("upImg").files[0];
+    if (!file) return alert("请选择图片文件");
+    const formData = new FormData();
+    formData.append("img", file);
+    try {
+        const res = await fetch(`${baseUrl}/api/v1/upload_cover/${currentFolder}`, {
+            method: "POST",
+            body: formData
+        })
+        const ret = await res.json();
+        alert(ret.msg);
+        loadList(currentPage);
+    } catch (err) {
+        alert("上传封面失败");
+        console.error(err);
+    }
+}
+async function saveAllNfo() {
+    const payload = {
+        title: document.getElementById("edit_title").value,
+        author: document.getElementById("edit_author").value,
+        narrator: document.getElementById("edit_narrator").value,
+        category: document.getElementById("edit_category").value,
+        year: document.getElementById("edit_year").value,
+        description: document.getElementById("edit_desc").value
+    }
+    try {
+        const res = await fetch(`${baseUrl}/api/v1/edit_all/${currentFolder}`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload)
+        })
+        const ret = await res.json();
+        alert(ret.msg);
+        closeMask("maskEdit");
+        loadList(currentPage);
+    } catch (err) {
+        alert("保存信息失败");
+        console.error(err);
+    }
+}
+window.onload = () => loadList(1);
+</script>
+</body>
+</html>

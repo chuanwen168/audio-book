@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分集列表</title>
+    <style>
+        body{max-width:800px;margin:30px auto;padding:0 16px}
+        .album-header {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .album-cover {
+            width: 140px;
+            height: 140px;
+            object-fit: cover;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .album-info h2 {
+            margin: 0 0 8px 0;
+            font-size: 24px;
+        }
+        .folder-name {
+            color: #666;
+            font-size: 14px;
+        }
+        .audio-line{
+            padding:10px 12px;
+            border-bottom:1px solid #eee;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        .audio-line:hover{
+            background-color: #f5f7fa;
+        }
+        .audio-line.active{
+            background-color: #e8f4ff;
+            color: #2563eb;
+            font-weight: 500;
+        }
+        .player-box {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            padding: 12px 16px;
+            background: #fff;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+        audio {
+            width: 100%;
+        }
+        #listBox {
+            margin-bottom: 90px;
+        }
+        .tip {
+            color: #999;
+            font-size: 13px;
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+<div class="album-header">
+    <img class="album-cover" id="coverImg" alt="专辑封面">
+    <div class="album-info">
+        <h2 id="bookTitle"></h2>
+        <div class="folder-name">文件夹：<span id="folderText"></span></div>
+        <div class="tip">点击条目播放，底部播放器控制</div>
+    </div>
+</div>
+
+<h3 style="margin-bottom:12px;color:#333;">音频分集列表</h3>
+<div id="listBox"></div>
+
+<div class="player-box">
+    <audio id="audioPlayer" controls preload="metadata">
+        您的浏览器不支持音频播放
+    
+</div>
+
+<script>
+const baseUrl = "";
+const params = new URLSearchParams(location.search);
+const folder = params.get("folder");
+let audioList = [];
+let currentPlayIndex = -1;
+const player = document.getElementById("audioPlayer");
+const listBox = document.getElementById("listBox");
+
+// 捕获音频加载错误
+player.addEventListener("error", function(e) {
+    const errMsg = "音频资源加载失败：找不到支持的媒体文件\n检查路径或MP3文件是否损坏";
+    console.error("Audio load error:", e, player.src);
+    alert(errMsg + "\n访问地址：" + player.src);
+});
+
+// 播放函数
+function playAudio(idx) {
+    if (!audioList || audioList.length === 0) {
+        alert("音频列表为空");
+        return;
+    }
+    if (idx < 0 || idx >= audioList.length) return;
+
+    const item = audioList[idx];
+    // 匹配后端 json:"file_url"
+    const safeFileUrl = item.file_url;
+    console.log("待播放地址：", safeFileUrl);
+
+    if (!safeFileUrl) {
+        alert("音频地址为空，请刷新页面");
+        return;
+    }
+
+    // 切换高亮
+    const items = listBox.querySelectorAll(".audio-line");
+    items.forEach(el => el.classList.remove("active"));
+    items[idx].classList.add("active");
+
+    player.src = safeFileUrl;
+    player.load();
+
+    player.play().then(() => {
+        currentPlayIndex = idx;
+    }).catch(err => {
+        console.error("播放触发失败:", err);
+    });
+}
+
+(async ()=>{
+    try {
+        const res = await fetch(`${baseUrl}/api/v1/album/${encodeURIComponent(folder)}`);
+        if (!res.ok) throw new Error("接口请求失败");
+        const json = await res.json();
+        const data = json.data;
+        audioList = data.audios;
+        console.log("完整音频数组：", audioList);
+
+        // 封面、标题、文件夹
+        document.getElementById("coverImg").src = data.nfo.cover;
+        document.getElementById("coverImg").onerror = function(){
+            this.src = "/media/nocover.jpg";
+        }
+        document.getElementById("bookTitle").innerText = data.nfo.title;
+        document.getElementById("folderText").innerText = data.folder_name;
+
+        // 渲染列表，读取 item.file_name
+        listBox.innerHTML = "";
+        data.audios.forEach((item, idx) => {
+            const div = document.createElement("div");
+            div.className = "audio-line";
+            div.textContent = `${idx+1}. ${item.file_name}`;
+            div.onclick = () => playAudio(idx);
+            listBox.appendChild(div);
+        });
+    } catch (err) {
+        alert("加载专辑信息失败：" + err.message);
+        console.error(err);
+    }
+})();
+
+// 播放完毕自动下一曲
+player.addEventListener("ended", () => {
+    if (currentPlayIndex + 1 < audioList.length) {
+        playAudio(currentPlayIndex + 1);
+    }
+});
+</script>
+</body>
+</html>

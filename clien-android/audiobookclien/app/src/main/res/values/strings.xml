@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">宝宝听书</string>
+    <string name="server_hint">服务器地址形如 http://192.168.1.100:8086/</string>
+</resources>

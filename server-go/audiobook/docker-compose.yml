@@ -1,0 +1,16 @@
+services:
+  audiobook:
+    image: alpine:latest
+    container_name: audiobook
+    ports:
+      - "8086:8086"
+    volumes:
+      - /vol1/1000/docker/audiobook:/app
+      - /vol2/1000/audio/book:/media
+    environment:
+      - MEDIA_ROOT=/media
+      - LISTEN_ADDR=0.0.0.0:8086
+      - GIN_MODE=release
+    restart: always
+    command: >
+      sh -c "chmod +x /app/audiobook-server && cd /app && ./audiobook-server"
